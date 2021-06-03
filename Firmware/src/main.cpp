@@ -2,6 +2,9 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+
+String BoardID = "defaultBoardID";
+
 //FREERTOS
 #define configMAX_PRIORITIES 10
 #define configUSE_TIMERS 1
@@ -154,25 +157,12 @@ void onMqttConnect(bool sessionPresent) {               //SUBSCRIBE TO MQTT
   SerialMon.print("Session present: ");
   SerialMon.println(sessionPresent);
 
-
-  uint16_t packetIdSub1 = mqttClient.subscribe("phone/admin", 2);      //sets admin phone numbers
-  uint16_t packetIdSub2 = mqttClient.subscribe("phone/customer", 2);   //sets customer phone numbers
-  uint16_t packetIdSub3 = mqttClient.subscribe("RF/enable", 2);        //enables rf key
-  uint16_t packetIdSub4 = mqttClient.subscribe("RF/password", 2);      //sets new rf secret key
-  uint16_t packetIdSub5 = mqttClient.subscribe("RF/listen", 2);        //enables RF listening
-
-  uint16_t packetIdSub6 = mqttClient.subscribe("door/open", 2);        //opens the door
-  uint16_t packetIdSub8 = mqttClient.subscribe("door/listen", 2);      //enables piezo listening
-  uint16_t packetIdSub7 = mqttClient.subscribe("door/time/open", 2);   //opens the door
-  uint16_t packetIdSub9 = mqttClient.subscribe("door/time/listen", 2); //sets piezo listening time (ms)
-
-  uint16_t packetIdSub10 = mqttClient.subscribe("doorway/open", 2);         //opens doorway
-  uint16_t packetIdSub11 = mqttClient.subscribe("doorway/listen", 2);       //enables doorway listening
-  uint16_t packetIdSub12 = mqttClient.subscribe("doorway/time/open", 2);    //opens doorway
-  uint16_t packetIdSub13 = mqttClient.subscribe("doorway/time/listen", 2);  //opens door
-  
-  uint16_t packetIdSub14 = mqttClient.subscribe("log/", 2);           //posts log info
-  uint16_t packetIdSub15 = mqttClient.subscribe("door/status", 2);    //post door opening info
+  String subscribePath = BoardID + "/#";
+  char mess[subscribePath.length() + 1]; 
+  subscribePath.toCharArray(mess, subscribePath.length() +1);
+  SerialMon.print("Subscribing to ");
+  SerialMon.println(mess);
+  uint16_t packetIdSub1 = mqttClient.subscribe(mess, 2);      //subscribes to BoardID/#
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -201,7 +191,19 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
   String topicSTR = topic;
   
-  if(topicSTR.indexOf("phone/admin") > -1){
+  if(topicSTR.indexOf("newBoardID") > -1){
+    BoardID = "";
+    for(int i = 0; i < len; i++){
+      BoardID += payload[i];
+    }
+    SerialMon.print("Received new BoardID = ");
+    SerialMon.println(BoardID);
+    preferences.begin("ID", false);
+    preferences.putString("BoardID", BoardID);
+    preferences.end();
+    ESP.restart();
+  }  
+  else if(topicSTR.indexOf("phone/admin") > -1){
     SerialMon.print("received new admin phone number ");
     admin_number = "";
     for(int i = 0; i < len; i++){
@@ -348,6 +350,14 @@ void setup() {
   delay(10);
 
   //Preferences
+  preferences.begin("ID", false);
+  BoardID = preferences.getString("BoardID", "");
+  if(BoardID == "") preferences.putString("BoardID", "1");
+  preferences.end();
+  
+  SerialMon.print("Booting up board with id: ");
+  SerialMon.println(BoardID);
+
   preferences.begin("RF", false);
   RF_password = preferences.getString("password", "");
   RF_enable = preferences.getBool("enable", false);
