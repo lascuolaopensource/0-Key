@@ -100,7 +100,7 @@ void simModuleSetup(){
 void listenIncomingCall(void* pvParameters)
 {
     SerialMon.println("Sim setup completed, waiting for call in");
-    mqttClient.publish("log/", 0, false, "Sim setup completed, waiting for call in");
+    mqttClient.publish(logPath, 0, false, "Sim setup completed, waiting for call in");
     for (;;) {
         if(!digitalRead(MODEM_RI)) {  
             SerialMon.println("call in ");
@@ -134,7 +134,7 @@ void listenIncomingCall(void* pvParameters)
                 char mess[100];
                 msg.toCharArray(mess, 100);
                 SerialMon.println(mess);
-                mqttClient.publish("log/", 2, true, mess);
+                mqttClient.publish(logPath, 2, true, mess);
                 
                 vTaskDelay(pdMS_TO_TICKS(1000));
             

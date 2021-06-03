@@ -16,17 +16,17 @@ void listenRF(void* pvParameters)
                 SerialMon.println("Password matching");
                 if(RF_enable){
                     SerialMon.println("RF is enabled, opening door");
-                    mqttClient.publish("log/", 2, true, "Got right RF password, opening the door");
+                    mqttClient.publish(logPath, 2, true, "Got right RF password, opening the door");
                     openDoor(defaultDoorTimer);
                 }
                 else{
                     SerialMon.println("RF is disabled tho");
-                    mqttClient.publish("log/", 2, true, "Got right RF password, but RF door opening is disabled");
+                    mqttClient.publish(logPath, 2, true, "Got right RF password, but RF door opening is disabled");
                 }
             }
             else{
                 SerialMon.println("Passord NOT matching");
-                mqttClient.publish("log/", 2, true, "Got wrong RF password");
+                mqttClient.publish(logPath, 2, true, "Got wrong RF password");
             }
         }
         vTaskDelay(1);

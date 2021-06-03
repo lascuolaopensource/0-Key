@@ -4,6 +4,8 @@
 
 
 String BoardID = "defaultBoardID";
+char logPath[100];
+char doorStatusPath[100];
 
 //FREERTOS
 #define configMAX_PRIORITIES 10
@@ -92,7 +94,7 @@ MPU6050 accelgyro(0x68); // <-- use for AD0 high
 #include <ESP32Servo.h>
 #define SERVO_PIN 25
 int SERVO_OPEN = 0;
-int SERVO_CLOSE = 180;
+int SERVO_CLOSED = 180;
 Servo doorServo;  // create servo object to control a servo
 
 //DOOR Functions
@@ -158,6 +160,12 @@ void onMqttConnect(bool sessionPresent) {               //SUBSCRIBE TO MQTT
   SerialMon.println(sessionPresent);
 
   String subscribePath = BoardID + "/#";
+  String logPathSTR = BoardID + "/log";
+  String doorStatusPathSTR = BoardID + "/door/status";
+
+  logPathSTR.toCharArray(logPath, logPathSTR.length() + 1);
+  doorStatusPathSTR.toCharArray(doorStatusPath, doorStatusPathSTR.length() + 1);
+
   char mess[subscribePath.length() + 1]; 
   subscribePath.toCharArray(mess, subscribePath.length() +1);
   SerialMon.print("Subscribing to ");
@@ -341,6 +349,32 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       defaultDoorwayListenTimer = time;
     }
   }
+  else if(topicSTR.indexOf("door/servo/open") > -1){
+    String degreeSTR = "";
+    for(int i = 0; i < len; i++){
+      degreeSTR += payload[i];
+    }
+    int degree = degreeSTR.toInt();
+    SerialMon.print("received new servo open degree ");
+    SerialMon.println(degree);
+    preferences.begin("SERVO", false);
+    preferences.putInt("SERVO_OPEN", degree);
+    preferences.end();
+    SERVO_OPEN = degree;
+  }
+  else if(topicSTR.indexOf("door/servo/closed") > -1){
+    String degreeSTR = "";
+    for(int i = 0; i < len; i++){
+      degreeSTR += payload[i];
+    }
+    int degree = degreeSTR.toInt();
+    SerialMon.print("received new servo closed degree ");
+    SerialMon.println(degree);
+    preferences.begin("SERVO", false);
+    preferences.putInt("SERVO_CLOSED", degree);
+    preferences.end();
+    SERVO_CLOSED = degree;
+  }
   //vTaskDelay(pdMS_TO_TICKS(1));
 }
 
@@ -357,6 +391,11 @@ void setup() {
   
   SerialMon.print("Booting up board with id: ");
   SerialMon.println(BoardID);
+
+  preferences.begin("SERVO", false);
+  SERVO_OPEN = preferences.getInt("SERVO_OPEN", 0);
+  SERVO_CLOSED = preferences.getInt("SERVO_CLOSED", 180);
+  preferences.end();
 
   preferences.begin("RF", false);
   RF_password = preferences.getString("password", "");

@@ -9,7 +9,7 @@ void listenGyro(void* pvParameters)
             SerialMon.print(gx); SerialMon.print("\t");  // questo!!
             SerialMon.print(gy); SerialMon.print("\t");
             SerialMon.println(gz);
-            mqttClient.publish("door/status", 0, false, "Door moving!");
+            mqttClient.publish(doorStatusPath, 0, false, "Door moving!");
         }
         else if (gy < GYRO_THRESHOLD) gyroTriggered = false;
         vTaskDelay(pdMS_TO_TICKS(100));
