@@ -131,7 +131,7 @@
         let newBoardID = document.getElementById('newBoardID').value;
         if(newBoardID){
             console.log("Setting newBoardID to " + newBoardID);
-            client.send(BoardID + "/newBoardID", newBoardID, 0, true);
+            client.send(BoardID + "/newBoardID", newBoardID, 0, false);
         }
     }
     function sendServoOpen(){
@@ -147,6 +147,27 @@
             console.log("Setting Servo close to " + servoClosed);
             client.send(BoardID + "/door/servo/closed", servoClosed, 0, true);
         }
+    }
+    function callAdmin(){
+        console.log("Sending call admin")
+        client.send(BoardID + "/phone/call/admin", "1", 0, false);
+    }
+    function callCustomer(){
+        console.log("Sending call customer")
+        client.send(BoardID + "/phone/call/customer", "1", 0, false);
+    }
+    function callNumber(){
+        let number = document.getElementById('call_number').value;
+        console.log("Sending call number " + number);
+        client.send(BoardID + "/phone/call/number", number, 0, false);
+    }
+    function hangup(){ 
+        console.log("Sending hangup");
+        client.send(BoardID + "/phone/call/hangup", "1", 0, false);
+    }
+    function reboot(){ 
+        console.log("Sending reboot");
+        client.send(BoardID + "/reboot", "1", 0, false);
     }
 </script>
 </head>
@@ -180,6 +201,14 @@
     <input type="text" id="customer"> <button id="send_customer" onclick="sendCustomer()">Send Customer Number</button>
     <br>
     <br>
+    <button id="call_admin" onclick="callAdmin()">Call Admin</button>
+    <br>
+    <button id="call_customer" onclick="callCustomer()">Call Customer</button>
+    <br>
+    <input type="text" id="call_number"> <button id="call_number_button" onclick="callNumber()">Call</button>
+    <br>
+    <button id="hangup" onclick="hangup()">Hangup</button>
+    <br>
     <input type="text" id="door_listen_time"> <button id="door_listen_time" onclick="listenDoorTime()">Send Door listen time (ms)</button>
     <br>
     <input type="text" id="door_open_time"> <button id="door_open_time" onclick="openDoorTime()">Send Door open time (ms)</button>
@@ -193,8 +222,13 @@
     <input type="text" id="servo_closed"> <button id="send_servo_closed" onclick="sendServoClosed()">Send Servo closed (degree)</button>
     <br>
     <input type="text" id="newBoardID"> <button id="setNewBoardId" onclick="setNewBoardId()">Send new BoardID</button>
+    <br>
+    <br>
+    <button id="reboot" onclick="reboot()">Reboot</button>
+    <br>
 </div>
 <div id="topicPool">
 </div>
 </body>
 </html>
+

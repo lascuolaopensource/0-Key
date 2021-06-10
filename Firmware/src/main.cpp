@@ -246,7 +246,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     startCall(customer_number);
   }
   else if(topicSTR.indexOf("phone/call/number") > -1){ 
-    SerialMon.print("received new number to call");
+    SerialMon.println("received new number to call");
     String numberToCall = "";
     for(int i = 0; i < len; i++){
       numberToCall += payload[i];
@@ -468,7 +468,7 @@ void setup() {
   SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
  
 
-  simModuleSetup();
+  simModuleSetup(false);
     //SETUP I2C for MPU6050
   Wire.begin(I2C_SDA_2, I2C_SCL_2);
   accelgyro.initialize();

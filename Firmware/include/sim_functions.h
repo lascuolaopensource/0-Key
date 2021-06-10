@@ -1,25 +1,26 @@
+bool HANGIN_UP = false;
 
-void setupCall(){
+void setupCall(bool isTask){
     SerialAT.print("AT+CHFA=1\r\n");
-    //vTaskDelay(pdMS_TO_TICKS(2));
-    delay(2);
+    if(isTask) vTaskDelay(pdMS_TO_TICKS(2));
+    else delay(2);
     //Set ringer sound level
     SerialAT.print("AT+CRSL=100\r\n");
-    //vTaskDelay(pdMS_TO_TICKS(2));
-    delay(2);
+    if(isTask) vTaskDelay(pdMS_TO_TICKS(2));
+    else delay(2);
     //Set loud speaker volume level
     SerialAT.print("AT+CLVL=100\r\n");
-    //vTaskDelay(pdMS_TO_TICKS(2));
-    delay(2);
+    if(isTask) vTaskDelay(pdMS_TO_TICKS(2));
+    else delay(2);
     // Calling line identification presentation
     SerialAT.print("AT+CLIP=1\r\n");
-    //vTaskDelay(pdMS_TO_TICKS(2));
-    delay(2);
+    if(isTask) vTaskDelay(pdMS_TO_TICKS(2));
+    else delay(2);
     //Set RI Pin input
     pinMode(MODEM_RI, INPUT);
 }
 
-void setupModem()
+void setupModem(bool isTask)
 {
 #ifdef MODEM_RST
     // Keep reset high
@@ -36,12 +37,12 @@ void setupModem()
     // Pull down PWRKEY for more than 1 second according to manual requirements
     digitalWrite(MODEM_PWRKEY, HIGH);
     
-    //vTaskDelay(pdMS_TO_TICKS(10));
-    delay(100);
+    if(isTask)vTaskDelay(pdMS_TO_TICKS(100));
+    else delay(100);
     digitalWrite(MODEM_PWRKEY, LOW);
     
-    //vTaskDelay(pdMS_TO_TICKS(10));
-    delay(1000);
+    if(isTask)vTaskDelay(pdMS_TO_TICKS(1000));
+    else delay(1000);
     digitalWrite(MODEM_PWRKEY, HIGH);
 
     // Initialize the indicator as an output
@@ -61,9 +62,9 @@ void turnOnNetlight()
     modem.sendAT("+CNETLIGHT=1");
 }
 
-void simModuleSetup(){          //Main Sim module init
+void simModuleSetup(bool isTask){          //Main Sim module init
     SerialMon.println("Initializing modem...");
-    setupModem();
+    setupModem(isTask);
 
     modem.restart();
     turnOffNetlight();
@@ -74,22 +75,16 @@ void simModuleSetup(){          //Main Sim module init
         modem.simUnlock(simPIN);
     }
     modem.sleepEnable();
-    delay(1000);
+    if(isTask)vTaskDelay(pdMS_TO_TICKS(1000));
+    else delay(1000);
 
     pinMode(MODEM_DTR, OUTPUT);
     digitalWrite(MODEM_DTR, LOW);       //Set DTR Pin low , wakeup modem .
 
-    setupCall();                        //Send commands for call input handling
+    setupCall(isTask);                        //Send commands for call input handling
     SerialAT.flush();
 
     bool res = modem.testAT();          // test modem response , res == 1 , modem is wakeup
-    SerialMon.print("SIM800 Test AT result -> ");
-    SerialMon.println(res);
-}
-
-void listenIncomingCall(void* pvParameters)     //main call listening task
-{
-    bool res = modem.testAT();
     SerialMon.print("SIM800 Test AT result -> ");
     SerialMon.println(res);
     if(res == 1){
@@ -100,8 +95,13 @@ void listenIncomingCall(void* pvParameters)     //main call listening task
         SerialMon.println("Sim error");
         mqttClient.publish(logPath, 0, false, "Sim error");
     }
+    HANGIN_UP = false;
+}
+
+void listenIncomingCall(void* pvParameters)     //main call listening task
+{ 
     for (;;) {
-        if(!digitalRead(MODEM_RI)) {                //Ring pin down, someone is calling
+        if(!digitalRead(MODEM_RI) && !HANGIN_UP && !EMERGENCY_CALL) {                //Ring pin down, someone is calling
             SerialMon.println("call in ");
             String callingNumber;
             vTaskDelay(pdMS_TO_TICKS(1000));         
@@ -136,7 +136,7 @@ void listenIncomingCall(void* pvParameters)     //main call listening task
                 SerialMon.println(mess);
                 mqttClient.publish(logPath, 2, true, mess);
                 vTaskDelay(pdMS_TO_TICKS(1000));
-                simModuleSetup();
+                simModuleSetup(true);
                 SerialAT.flush();
             }
         }
@@ -148,19 +148,25 @@ void startCall(String number){
     String msg = "Calling " + number;
     char mess[100];
     msg.toCharArray(mess, 100);
-    mqttClient.publish(logPath, 0, false, mess);
     bool res = modem.callNumber(number);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     SerialMon.print("Call:");
     SerialMon.println(res ? "OK" : "fail");
     if(!res){
-        EMERGENCY_CALL = true;
+        EMERGENCY_CALL = false;
         mqttClient.publish(logPath, 0, false, "Error while calling");
+    }
+    else{
+        EMERGENCY_CALL = true;
+        mqttClient.publish(logPath, 0, false, mess);
     }
 }
 
 void hangupCall(){
+    EMERGENCY_CALL = false;
+    HANGIN_UP = true;
     bool res = modem.callHangup();
     SerialMon.print("Hang up:");
     SerialMon.println(res ? "OK" : "fail");
-    simModuleSetup();                           //reset module after hangup
+    simModuleSetup(true);                           //reset module after hangup
 }
