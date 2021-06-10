@@ -2,7 +2,7 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
-
+bool EMERGENCY_CALL = false;
 String BoardID = "defaultBoardID";
 char logPath[100];
 char doorStatusPath[100];
@@ -28,6 +28,7 @@ extern "C" {
 Preferences preferences;
 AsyncWebServer server(80);
 DNSServer dns;
+#define ACCESS_POINT_NAME "0-Key Access Point"
 
 //AsyncMqtt
 #include <AsyncMqttClient.h>
@@ -36,6 +37,7 @@ DNSServer dns;
 AsyncMqttClient mqttClient;
 
 //TIMERS
+TimerHandle_t emergencyCallTimer;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
 TimerHandle_t incomingCallTimer;
@@ -49,6 +51,8 @@ TimerHandle_t simTimer;
 
 //SIM800L
 
+#define DEFAULT_ADMIN_PHONE "+393333333333"
+#define DEFAULT_CUSTOMER_PHONE "+393333333334"
 //#define DUMP_AT_COMMANDS                //Uncomment to debug AT commands
 const char simPIN[]   = "";               // SIM card PIN code, if any
 
@@ -79,13 +83,13 @@ TinyGsmClient client(modem);
 
 
 //MPU6050 Acc/Gyro - I2C
-#define GYRO_THRESHOLD       1000
+int16_t GYRO_THRESHOLD = 1000;
 #define I2C_SDA_2            18
 #define I2C_SCL_2            19
 #include "I2Cdev.h"
 #include "MPU6050.h"
 #include "Wire.h"
-int16_t ax, ay, az;
+//int16_t ax, ay, az;
 int16_t gx, gy, gz;
 MPU6050 accelgyro(0x68); // <-- use for AD0 high
 #include "gyro_functions.h"
@@ -93,16 +97,18 @@ MPU6050 accelgyro(0x68); // <-- use for AD0 high
 //SERVO
 #include <ESP32Servo.h>
 #define SERVO_PIN 25
+#define SERVO_MIN_US 500
+#define SERVO_MAX_US 2500
 int SERVO_OPEN = 0;
 int SERVO_CLOSED = 180;
 Servo doorServo;  // create servo object to control a servo
 
 //DOOR Functions
-int defaultPiezoTimer =  5000;
-int defaultDoorTimer =  5000;
-int defaultDoorwayTimer =  5000;
-int defaultDoorwayListenTimer =  5000;
-
+int timeListenPiezo;
+int timeListenDoorway;
+int timeOpenDoor;
+int timeOpenDoorway;
+#define DOORWAY_THRESHOLD 512
 #define DOORWAY_IN_PIN 15
 #define DOORWAY_OUT_PIN 14
 #define PIEZO_PIN 34
@@ -121,7 +127,7 @@ bool RF_enable;
 #include <RH_ASK.h>
 #include <SPI.h> // Not actually used but needed to compile
 RH_ASK driver(2000, RF_RX_PIN, RF_TX_PIN, 0);
-#include "RF_functions.h"
+#include "rf_functions.h"
 #include "mqtt_functions.h"
 
 void connectToMqtt() {
@@ -133,10 +139,9 @@ void connectToWifi() {
   SerialMon.println("Connecting to Wi-Fi...");
   
   AsyncWiFiManager wifiManager(&server,&dns);
-  wifiManager.autoConnect("AutoConnectAP");
+  wifiManager.autoConnect(ACCESS_POINT_NAME);
   connectToMqtt();
 }
-
 
 void WiFiEvent(WiFiEvent_t event) {
     SerialMon.printf("[WiFi-event] event: %d\n", event);
@@ -154,7 +159,7 @@ void WiFiEvent(WiFiEvent_t event) {
     }
 }
 
-void onMqttConnect(bool sessionPresent) {               //SUBSCRIBE TO MQTT
+void onMqttConnect(bool sessionPresent) {               
   SerialMon.println("Connected to MQTT.");
   SerialMon.print("Session present: ");
   SerialMon.println(sessionPresent);
@@ -233,6 +238,24 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     preferences.putString("customer", customer_number);
     preferences.end();
   }
+
+  else if(topicSTR.indexOf("phone/call/admin") > -1){
+    startCall(admin_number);
+  }
+  else if(topicSTR.indexOf("phone/call/customer") > -1){ 
+    startCall(customer_number);
+  }
+  else if(topicSTR.indexOf("phone/call/number") > -1){ 
+    SerialMon.print("received new number to call");
+    String numberToCall = "";
+    for(int i = 0; i < len; i++){
+      numberToCall += payload[i];
+    }
+    startCall(numberToCall);
+  }
+  else if(topicSTR.indexOf("phone/call/hangup") > -1){ 
+    hangupCall();
+  }
   else if(topicSTR.indexOf("RF/enable") > -1){
       SerialMon.print("received RF enable status ");
       SerialMon.println(payload[0]);
@@ -257,7 +280,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   else if(topicSTR.indexOf("door/open") > -1){
     if(payload[0] == '1'){
       SerialMon.println("received open door command");
-      openDoor(defaultDoorTimer);
+      openDoor(timeOpenDoor);
     } 
   }
   else if(topicSTR.indexOf("door/status") > -1){
@@ -268,7 +291,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     SerialMon.println(payload[0]);
     if (payload[0] == '1'){
       PIEZO_LISTENING = true;
-      piezoTimer = xTimerCreate("piezoTimer", pdMS_TO_TICKS(defaultPiezoTimer), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(stopPiezoListening));
+      piezoTimer = xTimerCreate("piezoTimer", pdMS_TO_TICKS(timeListenPiezo), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(stopPiezoListening));
       xTimerStart(piezoTimer, 0);
     }
     else stopPiezoListening();
@@ -285,7 +308,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       preferences.begin("TIMERS", false);
       preferences.putInt("DoorTimer", time);
       preferences.end();
-      defaultDoorTimer = time;
+      timeOpenDoor = time;
     }
   }
   else if(topicSTR.indexOf("door/time/listen") > -1){
@@ -300,13 +323,13 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       preferences.begin("TIMERS", false);
       preferences.putInt("PiezoTimer", time);
       preferences.end();
-      defaultPiezoTimer = time;
+      timeListenPiezo = time;
     }
   }
   else if(topicSTR.indexOf("doorway/open") > -1){
     if (payload[0] == '1'){
       SerialMon.println("received open door command");
-      openDoorway(defaultDoorwayTimer);
+      openDoorway(timeOpenDoorway);
     } 
   }
   else if(topicSTR.indexOf("doorway/listen") > -1){
@@ -314,7 +337,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     SerialMon.println(payload[0]);
     if (payload[0] == '1'){
       DOORWAY_LISTENING = true;
-      doorwayListenTimer = xTimerCreate("doorwayListenTimer", pdMS_TO_TICKS(defaultDoorwayListenTimer), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(stopDoorwayListening));
+      doorwayListenTimer = xTimerCreate("doorwayListenTimer", pdMS_TO_TICKS(timeListenDoorway), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(stopDoorwayListening));
       xTimerStart(doorwayListenTimer, 0);
     }
     else stopDoorwayListening();
@@ -331,7 +354,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       preferences.begin("TIMERS", false);
       preferences.putInt("DoorwayTimer", time);
       preferences.end();
-      defaultDoorwayTimer = time;
+      timeOpenDoorway = time;
     }
   }
   else if(topicSTR.indexOf("doorway/time/listen") > -1){
@@ -346,7 +369,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       preferences.begin("TIMERS", false);
       preferences.putInt("DrwyListenTime", time);
       preferences.end();
-      defaultDoorwayListenTimer = time;
+      timeListenDoorway = time;
     }
   }
   else if(topicSTR.indexOf("door/servo/open") > -1){
@@ -375,13 +398,15 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     preferences.end();
     SERVO_CLOSED = degree;
   }
+  else if(topicSTR.indexOf("/reboot") > -1){
+    ESP.restart();
+  }
   //vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 
 void setup() {
   SerialMon.begin(115200);                  // Set console baud rate
-  delay(10);
 
   //Preferences
   preferences.begin("ID", false);
@@ -406,15 +431,15 @@ void setup() {
   preferences.begin("PHONE", false);
   admin_number = preferences.getString("admin", "");
   customer_number = preferences.getString("customer", "");
-  if(admin_number == "") preferences.putString("admin", "+393343152826");
-  if(customer_number == "") preferences.putString("customer", "+393343152827");
+  if(admin_number == "") preferences.putString("admin", DEFAULT_ADMIN_PHONE);
+  if(customer_number == "") preferences.putString("customer", DEFAULT_CUSTOMER_PHONE);
   preferences.end();
 
   preferences.begin("TIMERS", false);
-  defaultPiezoTimer = preferences.getInt("PiezoTimer", 5000);
-  defaultDoorTimer = preferences.getInt("DoorTimer", 5000);
-  defaultDoorwayTimer = preferences.getInt("DoorwayTimer", 5000);
-  defaultDoorwayListenTimer = preferences.getInt("DrwyListenTime", 5000);
+  timeListenPiezo = preferences.getInt("PiezoTimer", 5000);
+  timeOpenDoor = preferences.getInt("DoorTimer", 5000);
+  timeOpenDoorway = preferences.getInt("DoorwayTimer", 5000);
+  timeListenDoorway = preferences.getInt("DrwyListenTime", 5000);
   preferences.end();
   
   //Setup Door pins
@@ -425,9 +450,11 @@ void setup() {
   digitalWrite(DOORWAY_OUT_PIN, LOW);
 
   //Setup servo
+  ESP32PWM::allocateTimer(0);
   doorServo.setPeriodHertz(50);
-	doorServo.attach(SERVO_PIN, 1000, 2000); 
-
+	doorServo.attach(SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US); 
+  doorServo.write(SERVO_CLOSED);
+  
   //SETUP RF
   if (!driver.init()) SerialMon.println("ERROR - RF setup failed ");
   else SerialMon.println("RF setup completed");

@@ -17,7 +17,7 @@ void listenRF(void* pvParameters)
                 if(RF_enable){
                     SerialMon.println("RF is enabled, opening door");
                     mqttClient.publish(logPath, 2, true, "Got right RF password, opening the door");
-                    openDoor(defaultDoorTimer);
+                    openDoor(timeOpenDoor);
                 }
                 else{
                     SerialMon.println("RF is disabled tho");

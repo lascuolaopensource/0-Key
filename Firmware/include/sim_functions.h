@@ -61,8 +61,7 @@ void turnOnNetlight()
     modem.sendAT("+CNETLIGHT=1");
 }
 
-void simModuleSetup(){
-    // Some start operations
+void simModuleSetup(){          //Main Sim module init
     SerialMon.println("Initializing modem...");
     setupModem();
 
@@ -72,43 +71,40 @@ void simModuleSetup(){
     SerialMon.print("Modem: ");
     SerialMon.println(modemInfo);
     if (strlen(simPIN) && modem.getSimStatus() != 3 ) {
-    modem.simUnlock(simPIN);
+        modem.simUnlock(simPIN);
     }
-    
     modem.sleepEnable();
-    //vTaskDelay(pdMS_TO_TICKS(1000));
     delay(1000);
-    bool res;
-    res = modem.testAT();
-    SerialMon.print("SIM800 Test AT result -> ");
-    SerialMon.println(res);
-    
-    SerialMon.println("Use DTR Pin Wakeup");
+
     pinMode(MODEM_DTR, OUTPUT);
-    //Set DTR Pin low , wakeup modem .
-    digitalWrite(MODEM_DTR, LOW);
+    digitalWrite(MODEM_DTR, LOW);       //Set DTR Pin low , wakeup modem .
 
-    // test modem response , res == 1 , modem is wakeup
-    res = modem.testAT();
+    setupCall();                        //Send commands for call input handling
+    SerialAT.flush();
+
+    bool res = modem.testAT();          // test modem response , res == 1 , modem is wakeup
     SerialMon.print("SIM800 Test AT result -> ");
     SerialMon.println(res);
-
-    setupCall();
-    SerialAT.flush();
 }
 
-void listenIncomingCall(void* pvParameters)
+void listenIncomingCall(void* pvParameters)     //main call listening task
 {
-    SerialMon.println("Sim setup completed, waiting for call in");
-    mqttClient.publish(logPath, 0, false, "Sim setup completed, waiting for call in");
+    bool res = modem.testAT();
+    SerialMon.print("SIM800 Test AT result -> ");
+    SerialMon.println(res);
+    if(res == 1){
+        SerialMon.println("Sim setup completed, waiting for call in");
+        mqttClient.publish(logPath, 0, false, "Sim setup completed, waiting for call in");
+    }
+    else{
+        SerialMon.println("Sim error");
+        mqttClient.publish(logPath, 0, false, "Sim error");
+    }
     for (;;) {
-        if(!digitalRead(MODEM_RI)) {  
+        if(!digitalRead(MODEM_RI)) {                //Ring pin down, someone is calling
             SerialMon.println("call in ");
-            
             String callingNumber;
-            
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            
+            vTaskDelay(pdMS_TO_TICKS(1000));         
             SerialMon.println("Hangup");
             SerialAT.println("ATH");
 
@@ -116,9 +112,11 @@ void listenIncomingCall(void* pvParameters)
             char as = SerialAT.read();
             callingNumber += as;
             }
-
+            SerialAT.flush();
+            if(callingNumber.indexOf('RING') > 0)
+                callingNumber = callingNumber.substring(callingNumber.indexOf('RING'));
             if(callingNumber.indexOf('+CLIP') > 0){
-                callingNumber = callingNumber.substring(callingNumber.indexOf('+CLIP'));
+                callingNumber = callingNumber.substring(callingNumber.indexOf('+CLIP: "'));
                 String msg = "Receiving a phone call from ";
                 if(callingNumber.indexOf(admin_number) > -1){
                     callingNumber = callingNumber.substring(callingNumber.indexOf(admin_number), callingNumber.indexOf(admin_number) + 14);
@@ -129,18 +127,40 @@ void listenIncomingCall(void* pvParameters)
                     msg += "customer, will do something else";
                 }
                 else{
-                    msg += "someone else, won't do anything";
+                    SerialMon.println(callingNumber);
+                    msg += callingNumber.substring(1, 14);
+                    msg += ", won't do anything";
                 }
                 char mess[100];
                 msg.toCharArray(mess, 100);
                 SerialMon.println(mess);
                 mqttClient.publish(logPath, 2, true, mess);
-                
                 vTaskDelay(pdMS_TO_TICKS(1000));
-            
                 simModuleSetup();
+                SerialAT.flush();
             }
         }
         vTaskDelay(pdMS_TO_TICKS(1));
     }
+}
+
+void startCall(String number){ 
+    String msg = "Calling " + number;
+    char mess[100];
+    msg.toCharArray(mess, 100);
+    mqttClient.publish(logPath, 0, false, mess);
+    bool res = modem.callNumber(number);
+    SerialMon.print("Call:");
+    SerialMon.println(res ? "OK" : "fail");
+    if(!res){
+        EMERGENCY_CALL = true;
+        mqttClient.publish(logPath, 0, false, "Error while calling");
+    }
+}
+
+void hangupCall(){
+    bool res = modem.callHangup();
+    SerialMon.print("Hang up:");
+    SerialMon.println(res ? "OK" : "fail");
+    simModuleSetup();                           //reset module after hangup
 }
