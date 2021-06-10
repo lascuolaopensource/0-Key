@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>MQTT Test</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript"></script>
+<script>
+    var MQTT_HOST = "";
+    var BoardID = "";
+
+    function onConnect() {
+        console.log("onConnect");
+        let options = {};
+        client.subscribe(BoardID + "/#", options);
+    }
+
+    // called when the client loses its connection
+    function onConnectionLost(responseObject) {
+        if (responseObject.errorCode !== 0) {
+            console.log("onConnectionLost:"+responseObject.errorMessage);
+        }
+    }
+
+    // called when a message arrives
+    function onMessageArrived(message) {
+        console.log("Message Arrived: topic: " + message.destinationName + " message: " + message.payloadString);
+        let topicPool = document.getElementById("topicPool");
+        let div = document.createElement("div");
+        div.id = message.destinationName;
+        let topic = document.createElement("h1");
+        topic.id = message.destinationName + "_topic";
+        topic.innerText = String(message.destinationName);
+        let messageH2 = document.createElement("h2");
+        messageH2.id = message.destinationName + "_message";
+        messageH2.innerText = message.payloadString;
+        div.appendChild(topic);
+        div.appendChild(messageH2);
+        topicPool.appendChild(div);
+    }
+
+    function openDoor(){
+        console.log("sending open door message");
+        client.send(BoardID + "/door/open", "1", 0, false);
+    }
+    function openDoorway(){
+        console.log("sending open doorway message");
+        client.send(BoardID + "/doorway/open", "1", 0, false);
+    }
+    function enableRF(){
+        let isChecked = document.getElementById('RF_en').checked;
+        if(isChecked){
+            console.log("Setting RF to ON");
+            client.send(BoardID + "/RF/enable", "1", 0, false);
+        }
+        else{
+            console.log("Setting RF to OFF");    
+            client.send(BoardID + "/RF/enable", "0", 0, false);
+        }    
+    }
+    function listenDoor(){
+        let isChecked = document.getElementById('door_listen').checked;
+        if(isChecked){
+            console.log("Setting door_listen to ON");
+            client.send(BoardID + "/door/listen", "1", 0, false);
+        }
+        else{
+            console.log("Setting door_listen to OFF");    
+            client.send(BoardID + "/door/listen", "0", 0, false);
+        }
+    }
+    function listenDoorTime(){
+        let timing = document.getElementById('door_listen_time').value;
+        console.log("Setting door_listen with time " + timing + "ms");
+        client.send(BoardID + "/door/time/listen", timing, 2, false);
+    }
+    function openDoorTime(){
+        let timing = document.getElementById('door_open_time').value;
+        console.log("Setting door_open with time " + timing + "ms");
+        client.send(BoardID + "/door/time/open", timing, 2, false);
+    }
+    function listenDoorway(){
+        let isChecked = document.getElementById('doorway_listen').checked;
+        if(isChecked){
+            console.log("Setting doorway_listen to ON");
+            client.send(BoardID + "/doorway/listen", "1", 0, false);
+        }
+        else{
+            console.log("Setting doorway_listen to OFF");    
+            client.send(BoardID + "/doorway/listen", "0", 0, false);
+        }    
+    }
+    function listenDoorwayTime(){
+        let timing = document.getElementById('doorway_listen_time').value;
+        console.log("Setting doorway_listen with time " + timing + "ms");
+        client.send(BoardID + "/doorway/time/listen", timing, 2, false);
+    }
+    function openDoorwayTime(){
+        let timing = document.getElementById('doorway_open_time').value;
+        console.log("Setting doorway_open with time " + timing + "ms");
+        client.send(BoardID + "/doorway/time/open", timing, 2, false);
+    }
+    function sendPassword(){
+        let pass = document.getElementById('password').value;
+        if(pass){
+            console.log("Setting RF pass to " + pass);
+            client.send(BoardID + "/RF/password", pass, 0, true);
+        }
+    }
+    function sendAdmin(){
+        let admin = document.getElementById('admin').value;
+        if(admin){
+            console.log("Setting Admin number to " + admin);
+            client.send(BoardID + "/phone/admin", admin, 0, true);
+        }
+    }
+    function sendCustomer(){
+        let customer = document.getElementById('customer').value;
+        if(customer){
+            console.log("Setting customer number to " + customer);
+            client.send(BoardID + "/phone/customer", customer, 0, true);
+        }
+    }
+    function setConnectionBoardId(){
+        MQTT_HOST = document.getElementById('MQTT_HOST').value;
+        client = new Paho.MQTT.Client(MQTT_HOST, Number(443), "/", "browserTest");
+        client.onConnectionLost = onConnectionLost;
+        client.onMessageArrived = onMessageArrived;
+        BoardID = document.getElementById('boardID').value;
+        client.connect({useSSL: true, onSuccess:onConnect});
+    }
+    function setNewBoardId(){
+        let newBoardID = document.getElementById('newBoardID').value;
+        if(newBoardID){
+            console.log("Setting newBoardID to " + newBoardID);
+            client.send(BoardID + "/newBoardID", newBoardID, 0, true);
+        }
+    }
+    function sendServoOpen(){
+        let servoOpen = document.getElementById('servo_open').value;
+        if(servoOpen){
+            console.log("Setting Servo open to " + servoOpen);
+            client.send(BoardID + "/door/servo/open", servoOpen, 0, true);
+        }
+    }
+    function sendServoClosed(){
+        let servoClosed = document.getElementById('servo_closed').value;
+        if(servoClosed){
+            console.log("Setting Servo close to " + servoClosed);
+            client.send(BoardID + "/door/servo/closed", servoClosed, 0, true);
+        }
+    }
+</script>
+</head>
+<body>
+
+<h1> MQTT Test</h1>
+    <input type="text" id="MQTT_HOST"><label for="boardID"> MQTT Host</label>
+    <br>
+    <input type="text" id="boardID"> <label for="boardID"> BoardID</label>
+    <br>
+    <button id="setConnectionBoardId" onclick="setConnectionBoardId()">Connect to MQTT</button>
+    <br>
+<div id="actions">
+    <h2>Actions</h2>
+    <button id="open_door" onclick="openDoor()">Open Door</button>
+    <br>
+    <button id="open_doorway" onclick="openDoorway()">Open Doorway</button>
+    <br>
+    <br>
+    <label for="RF_en">RF Enabled</label><input oninput="enableRF()" id="RF_en" type="checkbox"></input>
+    <br>
+    <label for="doorway_listen">doorway_listen</label><input  oninput="listenDoorway()" id="doorway_listen" type="checkbox"></input>
+    <br>
+    <label for="door_listen">door_listen</label><input  oninput="listenDoor()" id="door_listen" type="checkbox"></input>
+    <br>
+    <br>
+    <input type="text" id="password"> <button id="send_pass" onclick="sendPassword()">Send RF Password</button>
+    <br>
+    <input type="text" id="admin"> <button id="send_admin" onclick="sendAdmin()">Send Admin Number</button>
+    <br>
+    <input type="text" id="customer"> <button id="send_customer" onclick="sendCustomer()">Send Customer Number</button>
+    <br>
+    <br>
+    <input type="text" id="door_listen_time"> <button id="door_listen_time" onclick="listenDoorTime()">Send Door listen time (ms)</button>
+    <br>
+    <input type="text" id="door_open_time"> <button id="door_open_time" onclick="openDoorTime()">Send Door open time (ms)</button>
+    <br>
+    <input type="text" id="doorway_listen_time"> <button id="doorway_listen_time" onclick="listenDoorwayTime()">Send Doorway listen time (ms)</button>
+    <br>
+    <input type="text" id="doorway_open_time"> <button id="doorway_open_time" onclick="openDoorwayTime()">Send Doorway open time (ms)</button>
+    <br>
+    <input type="text" id="servo_open"> <button id="send_servo_open" onclick="sendServoOpen()">Send Servo open (degree)</button>
+    <br>
+    <input type="text" id="servo_closed"> <button id="send_servo_closed" onclick="sendServoClosed()">Send Servo closed (degree)</button>
+    <br>
+    <input type="text" id="newBoardID"> <button id="setNewBoardId" onclick="setNewBoardId()">Send new BoardID</button>
+</div>
+<div id="topicPool">
+</div>
+</body>
+</html>
