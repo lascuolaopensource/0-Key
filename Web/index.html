@@ -119,6 +119,31 @@
             client.send(BoardID + "/phone/customer", customer, 0, true);
         }
     }
+    function sendIsMaster(){
+        let isChecked = document.getElementById('isMaster').checked;
+        if(isChecked){
+            console.log("Setting isMaster to ON");
+            client.send(BoardID + "/master/isMaster", "1", 0, false);
+        }
+        else{
+            console.log("Setting isMaster to OFF");    
+            client.send(BoardID + "/master/isMaster", "0", 0, false);
+        }
+    }
+    function sendMaster(){
+        let master = document.getElementById('master').value;
+        if(master){
+            console.log("Setting master number to " + master);
+            client.send(BoardID + "/master/masterNumber", master, 0, true);
+        }
+    }
+    function sendSlave(){
+        let slave = document.getElementById('slave').value;
+        if(slave){
+            console.log("Setting slave number to " + slave);
+            client.send(BoardID + "/master/slaveNumber", slave, 0, true);
+        }
+    }
     function setConnectionBoardId(){
         MQTT_HOST = document.getElementById('MQTT_HOST').value;
         client = new Paho.MQTT.Client(MQTT_HOST, Number(443), "/", "browserTest");
@@ -169,6 +194,26 @@
         console.log("Sending reboot");
         client.send(BoardID + "/reboot", "1", 0, false);
     }
+    function getStatus(){ 
+        console.log("Sending reboot");
+        client.send(BoardID + "/json/get", "1", 0, false);
+    }
+    function sendWifiEnabled(){
+        let isChecked = document.getElementById('wifiEnabled').checked;
+        if(isChecked){
+            console.log("Setting wifi enabled to ON");
+            client.send(BoardID + "/wifi/enabled", "1", 0, false);
+        }
+        else{
+            console.log("Setting useWifi to OFF");    
+            client.send(BoardID + "/wifi/enabled", "0", 0, false);
+        }
+    }
+    function sendWifiAttampts(){
+        let number = document.getElementById('wifiAttemps').value;
+        console.log("Sending wifiAttemps " + number);
+        client.send(BoardID + "/wifi/reconnectAttempts", number, 0, false);
+    }
 </script>
 </head>
 <body>
@@ -182,6 +227,8 @@
     <br>
 <div id="actions">
     <h2>Actions</h2>
+    <button id="status" onclick="getStatus()">Get Status</button>
+    <br>
     <button id="open_door" onclick="openDoor()">Open Door</button>
     <br>
     <button id="open_doorway" onclick="openDoorway()">Open Doorway</button>
@@ -199,6 +246,20 @@
     <input type="text" id="admin"> <button id="send_admin" onclick="sendAdmin()">Send Admin Number</button>
     <br>
     <input type="text" id="customer"> <button id="send_customer" onclick="sendCustomer()">Send Customer Number</button>
+    <br>
+    <br>
+    <label for="wifiEnabled">Wifi Enabled</label><input oninput="sendWifiEnabled()" id="wifiEnabled" type="checkbox"></input>
+    <br>
+    <input type="text" id="wifiAttemps"> <button id="send_customer" onclick="sendWifiAttampts()">Send Wifi Attempts</button>
+    <br>
+   
+    <br>
+    <br>
+    <label for="isMaster">isMaster</label><input  oninput="sendIsMaster()" id="isMaster" type="checkbox"></input>
+    <br>
+    <input type="text" id="master"> <button id="send_Master" onclick="sendMaster()">Send Master Number</button>
+    <br>
+    <input type="text" id="slave"> <button id="send_Slave" onclick="sendSlave()">Send Slave Number</button>
     <br>
     <br>
     <button id="call_admin" onclick="callAdmin()">Call Admin</button>

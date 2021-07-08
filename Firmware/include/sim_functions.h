@@ -120,11 +120,23 @@ void listenIncomingCall(void* pvParameters)     //main call listening task
                 String msg = "Receiving a phone call from ";
                 if(callingNumber.indexOf(admin_number) > -1){
                     callingNumber = callingNumber.substring(callingNumber.indexOf(admin_number), callingNumber.indexOf(admin_number) + 14);
-                    msg += "admin, will do something";
+                    if(isMaster){
+                        msg += "admin. This board is master, will call slaves";
+                        //call slaves
+                    }
+                    else{
+                        msg += "admin, will do something";
+                        //listen doorway / door
+                    }
                 }
                 else if(callingNumber.indexOf(customer_number) > -1){
                     callingNumber = callingNumber.substring(callingNumber.indexOf(customer_number), callingNumber.indexOf(customer_number) + 14);
                     msg += "customer, will do something else";
+                }
+                else if(!isMaster && callingNumber.indexOf(master_number) > -1){
+                    callingNumber = callingNumber.substring(callingNumber.indexOf(master_number), callingNumber.indexOf(master_number) + 14);
+                    msg += "master board. This board is slave, will do something";
+                    //listen doorway / door
                 }
                 else{
                     SerialMon.println(callingNumber);
@@ -134,7 +146,7 @@ void listenIncomingCall(void* pvParameters)     //main call listening task
                 char mess[100];
                 msg.toCharArray(mess, 100);
                 SerialMon.println(mess);
-                mqttClient.publish(logPath, 2, true, mess);
+                mqttClient.publish(logPath, 0, true, mess);
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 simModuleSetup(true);
                 SerialAT.flush();

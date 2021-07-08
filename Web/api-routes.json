@@ -1,0 +1,98 @@
+
+{
+    "routes": [
+    {
+      "route": "phone/call/admin",
+      "payload": "",
+      "description": "Triggers call to admin."
+      },
+    {
+      "route": "phone/call/customer",
+      "payload": "",
+      "description": "Triggers call to customer."
+      },
+    {
+      "route": "phone/call/number",
+      "payload": "String",
+      "description": "Triggers call to specific number."
+      },
+    {
+      "route": "phone/call/hangup",
+      "payload": "",
+      "description": "Triggers hang up call function."
+      },
+    {
+      "route": "RF/enable",
+      "payload": "String 0/1",
+      "description": "Enables RF password checking if payload == '1'."
+      },
+    {
+      "route": "RF/password",
+      "payload": "String",
+      "description": "Sets string for RF password checking."
+      },
+    {
+      "route": "door/open",
+      "payload": "String 0/1",
+      "description": "Triggers door opening if payload == '1'."
+      },
+    {
+      "route": "door/listen",
+      "payload": "String 0/1",
+      "description": "Triggers door listening countdown if payload == '1'."
+      },
+    {
+      "route": "door/time/open",
+      "payload": "int",
+      "description": "Set countdown limit in millisecond for door opening. This keeps the door opened until timer resets."
+      },
+    {
+      "route": "door/time/listen",
+      "payload": "int",
+      "description": "Set countdown limit in millisecond for door listening. This keeps the piezo listening for input until timer resets."
+      },
+    {
+      "route": "doorway/open",
+      "payload": "String 0/1",
+      "description": "Triggers door opening if payload == '1'."
+      },
+    {
+      "route": "doorway/listen",
+      "payload": "String 0/1",
+      "description": "Triggers door listening countdown if payload == '1'."
+      },
+    {
+      "route": "doorway/time/open",
+      "payload": "int",
+      "description": "Set countdown limit in millisecond for doorway opening. This keeps the dooray output high until timer resets."
+      },
+    {
+      "route": "doorway/time/listen",
+      "payload": "int",
+      "description": "Set countdown limit in millisecond for door listening. This keeps the doorway input listening for input until timer resets."
+    },
+    {
+      "route": "door/servo/open",
+      "payload": "int 0/180",
+      "description": "Sets servo open position in degrees."
+      },
+    {
+      "route": "door/servo/closed",
+      "payload": "int 0/180",
+      "description": "Set servo closed position in degrees."
+      },
+    {
+      "route": "wifi/enabled",
+      "payload": "String 0/1",
+      "description": "Sets board to use wifi connection if payload == '1'. This enables check for wifi connection when the board is booted up. 
+      If it doesn't find any previously known SSID/Password pair, it creates an access point and serves a webpage to select a wifi connection. 
+      If the wifi connection go down, the board tries to reconnect every 2 seconds until maximum reconnection attempt is reached. When this happens, the board connects to GPRS network instead.
+      If wifi/enabled is set to false, the board never tries to connect to wifi and always use GPRS network."
+      },
+    {
+      "route": "wifi/reconnectAttempt",
+      "payload": "int",
+      "description": "Set maximum wifi reconnection attempt limit. This is used only when wifi/enabled is set to 1."
+    }
+    ]
+}

@@ -1,11 +1,24 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <ArduinoJson.h>
 
+int reconnectAttempt = 0;
+int WIFI_MAX_RECONNECT_ATTEMPTS = 3;
+bool USE_WIFI = true;
 bool EMERGENCY_CALL = false;
+
 String BoardID = "defaultBoardID";
+bool isMaster;
+
 char logPath[100];
 char doorStatusPath[100];
+char jsonStatusPath[100];
+
+// Your GPRS credentials, if any
+const char GPRS_APN[] = "";
+const char GPRS_User[] = "";
+const char GPRS_Pass[] = "";
 
 //FREERTOS
 #define configMAX_PRIORITIES 10
@@ -56,8 +69,8 @@ TimerHandle_t simTimer;
 //#define DUMP_AT_COMMANDS                //Uncomment to debug AT commands
 const char simPIN[]   = "";               // SIM card PIN code, if any
 
+String admin_number, customer_number, master_number, slave_number;
 
-String admin_number, customer_number;
 #define SIM800L_IP5306_VERSION_20200811
 #define TINY_GSM_DEBUG          SerialMon
 #include "sim_utilities.h"
@@ -77,10 +90,8 @@ TinyGsm modem(SerialAT);
 #define uS_TO_S_FACTOR 1000000ULL       //Conversion factor for micro seconds to seconds
 #define TIME_TO_SLEEP  60               //Time ESP32 will go to sleep (in seconds)
 
-
 TinyGsmClient client(modem);
 #include "sim_functions.h"
-
 
 //MPU6050 Acc/Gyro - I2C
 int16_t GYRO_THRESHOLD = 1000;
@@ -117,7 +128,6 @@ bool DOORWAY_LISTENING = false;
 bool PIEZO_LISTENING = false;
 #include "door_functions.h"
 
-
 //RF FS1000A Receiver
 String RF_password = "password";
 #define RF_RX_PIN 35
@@ -135,12 +145,55 @@ void connectToMqtt() {
   mqttClient.connect();
 }
 
-void connectToWifi() {
-  SerialMon.println("Connecting to Wi-Fi...");
-  
-  AsyncWiFiManager wifiManager(&server,&dns);
-  wifiManager.autoConnect(ACCESS_POINT_NAME);
-  connectToMqtt();
+void connectToInternet() {
+  if(USE_WIFI){
+    SerialMon.println("Connecting to Wi-Fi...");
+    AsyncWiFiManager wifiManager(&server,&dns);
+    if(wifiManager.autoConnect(ACCESS_POINT_NAME)){
+      connectToMqtt();
+    }
+    else{
+      reconnectAttempt++;
+      if(reconnectAttempt >= WIFI_MAX_RECONNECT_ATTEMPTS){
+        reconnectAttempt = 0;
+        USE_WIFI = false;
+      }
+    }
+  }
+  else{
+    SerialMon.println("Connecting to GPRS...");
+    //try to connect to gprs
+    SerialMon.println("Waiting for network...");
+    if (modem.waitForNetwork()) {
+      SerialMon.println("network present");
+      vTaskDelay(pdMS_TO_TICKS(5000));
+      if (modem.isNetworkConnected()) {
+        SerialMon.println("Network connected");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        // GPRS connection parameters are usually set after network registration
+        SerialMon.print(F("Connecting to "));
+        SerialMon.println(GPRS_APN);
+        if (modem.gprsConnect(GPRS_APN, GPRS_User, GPRS_Pass)) {
+          SerialMon.println("Connecting now");
+          vTaskDelay(pdMS_TO_TICKS(5000));
+          if (modem.isGprsConnected()) {
+            SerialMon.println("GPRS connected");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            connectToMqtt();
+          }
+        }
+        else{
+          SerialMon.println("Connection not successful");
+        }
+      }
+      else{
+        SerialMon.println("Network NOT connected");  
+      }
+    }
+    else{
+      SerialMon.println("network NOT present");
+    }
+  }
 }
 
 void WiFiEvent(WiFiEvent_t event) {
@@ -154,7 +207,7 @@ void WiFiEvent(WiFiEvent_t event) {
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
         SerialMon.println("WiFi lost connection");
-        if(!xTimerIsTimerActive(wifiReconnectTimer)) wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));  
+        if(!xTimerIsTimerActive(wifiReconnectTimer)) wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToInternet));  
         break;
     }
 }
@@ -167,9 +220,11 @@ void onMqttConnect(bool sessionPresent) {
   String subscribePath = BoardID + "/#";
   String logPathSTR = BoardID + "/log";
   String doorStatusPathSTR = BoardID + "/door/status";
+  String jsonStatusPathSTR = BoardID + "/json";
 
   logPathSTR.toCharArray(logPath, logPathSTR.length() + 1);
   doorStatusPathSTR.toCharArray(doorStatusPath, doorStatusPathSTR.length() + 1);
+  jsonStatusPathSTR.toCharArray(jsonStatusPath, jsonStatusPathSTR.length() + 1);
 
   char mess[subscribePath.length() + 1]; 
   subscribePath.toCharArray(mess, subscribePath.length() +1);
@@ -183,6 +238,41 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   if (WiFi.isConnected()) {
     connectToMqtt();
   }
+}
+
+void postStatusJson(){
+  StaticJsonDocument<200> doc;
+
+  doc["boardID"] = BoardID;
+  doc["isMaster"] = isMaster;
+
+  doc["useWifi"] = USE_WIFI;
+  doc["wifiMaxReconnectAttempts"] = WIFI_MAX_RECONNECT_ATTEMPTS;
+
+  doc["gyroscope"] = int(gy);
+        
+  doc["rf_enabled"] = RF_enable;
+  doc["rf_password"] = RF_password;
+
+  doc["gsm"] = modem.testAT();
+  doc["admin_number"] = admin_number;
+  doc["customer_number"] = customer_number;
+  doc["master_number"] = master_number;
+  doc["slave_number"] = slave_number;
+
+  doc["doorway_listening"] = DOORWAY_LISTENING;
+  doc["doorway_listening_time"] = timeListenDoorway;
+  doc["doorway_opening_time"] = timeOpenDoorway;
+
+  doc["door_listening"] = DOORWAY_LISTENING;
+  doc["door_listening_time"] = timeListenPiezo;
+  doc["door_opening_time"] = timeOpenDoor;
+  doc["door_open_degree"] = SERVO_OPEN;
+  doc["door_close_degree"] = SERVO_CLOSED;
+
+  char jsonBuffer[256];
+  serializeJson(doc, jsonBuffer);
+  mqttClient.publish(jsonStatusPath, 0, true, jsonBuffer);
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
@@ -282,9 +372,6 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       SerialMon.println("received open door command");
       openDoor(timeOpenDoor);
     } 
-  }
-  else if(topicSTR.indexOf("door/status") > -1){
-    //to be defined
   }
   else if(topicSTR.indexOf("door/listen") > -1){
     SerialMon.print("received door listen status ");
@@ -398,12 +485,66 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     preferences.end();
     SERVO_CLOSED = degree;
   }
+  else if(topicSTR.indexOf("wifi/enabled") > -1){
+    if(payload[0] == '1') USE_WIFI = true;
+    else USE_WIFI = false;
+    SerialMon.print("received new USE_WIFI ");
+    SerialMon.println(USE_WIFI);
+    preferences.begin("WIFI", false);
+    preferences.putBool("USE_WIFI", USE_WIFI);
+    preferences.end();
+  }
+  else if(topicSTR.indexOf("wifi/reconnectAttempts") > -1){
+    String attemptSTR = "";
+    for(int i = 0; i < len; i++){
+      attemptSTR += payload[i];
+    }
+    WIFI_MAX_RECONNECT_ATTEMPTS = attemptSTR.toInt();
+    SerialMon.print("received new maximum wifi reconnect attempt limit");
+    SerialMon.println(WIFI_MAX_RECONNECT_ATTEMPTS);
+    preferences.begin("WIFI", false);
+    preferences.putInt("ATTEMPT", WIFI_MAX_RECONNECT_ATTEMPTS);
+    preferences.end();
+  }
+  else if(topicSTR.indexOf("master/isMaster") > -1){
+    if(payload[0] == '1') isMaster = true;
+    else isMaster = false;
+    SerialMon.print("received new isMaster ");
+    SerialMon.println(isMaster);
+    preferences.begin("MASTER", false);
+    preferences.putBool("is_master", isMaster);
+    preferences.end();
+  }
+  else if(topicSTR.indexOf("master/masterNumber") > -1){
+    master_number = "";
+    for(int i = 0; i < len; i++){
+      master_number += payload[i];
+    }
+    SerialMon.print("received new master phone number ");
+    SerialMon.println(master_number);
+    preferences.begin("MASTER", false);
+    preferences.putString("master_number", master_number);
+    preferences.end();
+  }
+  else if(topicSTR.indexOf("master/slaveNumber") > -1){
+    SerialMon.print("received new slave phone number ");
+    slave_number = "";
+    for(int i = 0; i < len; i++){
+      slave_number += payload[i];
+    }
+    SerialMon.println(slave_number);
+    preferences.begin("MASTER", false);
+    preferences.putString("slave_number", slave_number);
+    preferences.end();
+  }
+  else if(topicSTR.indexOf("/json/get") > -1){
+    postStatusJson();
+  }
   else if(topicSTR.indexOf("/reboot") > -1){
     ESP.restart();
   }
   //vTaskDelay(pdMS_TO_TICKS(1));
 }
-
 
 void setup() {
   SerialMon.begin(115200);                  // Set console baud rate
@@ -416,6 +557,17 @@ void setup() {
   
   SerialMon.print("Booting up board with id: ");
   SerialMon.println(BoardID);
+  
+  preferences.begin("MASTER", false);
+  isMaster = preferences.getBool("is_master", true);
+  master_number = preferences.getString("master_number", "");
+  slave_number = preferences.getString("slave_number", "");
+  preferences.end();
+
+  preferences.begin("WIFI", false);
+  USE_WIFI = preferences.getBool("USE_WIFI", true);
+  WIFI_MAX_RECONNECT_ATTEMPTS = preferences.getInt("ATTEMPT", 3);
+  preferences.end();
 
   preferences.begin("SERVO", false);
   SERVO_OPEN = preferences.getInt("SERVO_OPEN", 0);
@@ -474,7 +626,6 @@ void setup() {
   accelgyro.initialize();
   SerialMon.println("Testing MPU6050 connections...");
   SerialMon.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
-  
       
   mqttClient.onConnect(onMqttConnect);
   mqttClient.onDisconnect(onMqttDisconnect);
@@ -484,7 +635,7 @@ void setup() {
   mqttClient.onPublish(onMqttPublish);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
-  connectToWifi();
+  connectToInternet();
 
   TaskHandle_t xHandle1 = NULL;
   TaskHandle_t xHandle2 = NULL;
